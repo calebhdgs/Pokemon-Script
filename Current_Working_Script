@@ -115,11 +115,37 @@ function resetBattleScreen()
 end
 
 --
+--Calculates how well the pokemon fought
+--line 118
+function fitness(fSHealth, oSHealth, turn)
+	local fCHealth = memory.read_u8(0x1016)
+	local oCHealth = memory.read_u8(0x0FE7)
+	local fMHealth = memory.read_u8(0x1024)
+	local oMHealth = memory.read_u8(0x0FF5)
+	
+	console.write("calculating fitness for previous fight... \n")
+
+	local mHealth = (fSHealth - fCHealth)/fMHealth
+	local oHealth = (oSHealth - oCHealth)/oMHealth
+	local prcnt = math.abs(oHealth - mHealth) * 100
+	local ans = math.pow(prcnt, 100/(99+turn))
+	if fCHealth == 0 then
+		ans = -ans
+	end
+	console.write("You got a fitness score of: ")
+	console.write(ans)
+	console.write("\n")
+end
+
+--
 --completes a fight for the user
 --line 119
 function fight(myPID)
 	longWait()
 	local myPokemonID = mPID
+	local myPokemonHealth = memory.read_u8(0x1016)
+	local opponentPokemonHealth = memory.read_u8(0x0FE7)
+	local turn = 1
 	console.write("Inside game loop.\n")
 	makeAttack(math.random(3))
 	longWait()
@@ -131,12 +157,12 @@ function fight(myPID)
 
 		if gamestate == myPokemonID then 	--My pokemon fainted
 			console.write("Oh no! my Pokemon has fainted.\n")
-			--fitness
 			joypad.set({A = 1})
 			clearJoypad()
 			joypad.set({B = 1})
 			clearJoypad()
 			if memory.read_u8(0x1) < 20 then
+				console.write("Decided to disengage.\n")
 				return
 			else
 				break
@@ -163,6 +189,7 @@ function fight(myPID)
 			if gamestate == 144 or gamestate == 166 then
 				console.write("Decided to attack.")
 				makeAttack(math.random(3))
+				turn = turn + 1
 				longWait()
 				longWait()
 				longWait()
@@ -179,7 +206,7 @@ function fight(myPID)
 		gamestate = memory.read_u8(0x1)
 		emu.frameadvance()
 	end
-	--fitness()
+	fitness(myPokemonHealth, opponentPokemonHealth, turn)
 	
 	if gamestate == 249 then 			--wild pokemon encounter is over, we done
 		console.write("The wild Pokemon has fainted.\n")
