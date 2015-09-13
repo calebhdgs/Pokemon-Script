@@ -1,0 +1,13 @@
+function shortWait ()
+	local counter = 0
+	while counter < 10 do
+		emu.frameadvance()
+		counter = counter + 1
+	end
+end
+
+client.clearautohold()
+joypad.set({A = 1})
+shortWait() 
+client.clearautohold()
+joypad.set({A = 1})
