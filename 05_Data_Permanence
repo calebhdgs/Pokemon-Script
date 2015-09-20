@@ -1,0 +1,327 @@
+--
+--This method will wait for 20 frames
+--line 3
+function shortWait()
+	local counter = 0
+	while counter < 20 do 				--Loop 20 times updating frames every time
+		emu.frameadvance()
+		counter = counter + 1
+	end
+end
+
+--
+--Resets the joypad to having no buttons pressed
+--line 14
+function clearJoypad()
+	shortWait()
+	client.clearautohold()				--Sets all button values to 0
+	shortWait()
+end
+
+--
+--waits 80 frames, or two seconds at 100% speed
+--
+function longWait()
+	local counter = 0
+	while counter < 80 do
+		emu.frameadvance()
+		counter = counter + 1
+	end
+end
+
+---
+---Resets the attack selection screen to selecting the top option
+---line 34
+function resetAttackSelected(currSelect)
+	while currSelect > 1 do
+		clearJoypad()
+		joypad.set({Up = 1})
+		currSelect = currSelect - 1
+		clearJoypad()
+		emu.frameadvance()
+	end
+	clearJoypad()		
+end
+
+--
+--Randomly chooses and executes attack 1, 2, or 3
+--line 48
+function makeAttack(attackNumber)			
+	console.write("Making attack number: ")
+	console.write(attackNumber)
+	console.write("\n")
+
+	clearJoypad()
+	joypad.set({A=1})				--enter the attack screen
+	shortWait()	
+
+	currSelected = memory.read_u8(0x0C26)
+	console.write("Resetting the selected attack.\n")
+	resetAttackSelected(currSelected)
+	
+	if (attackNumber == 2)	then			--select attack 2
+		clearJoypad()		
+		joypad.set({Down = 1})
+		shortWait()
+	end
+	if (attackNumber == 3) then			--select attack 3
+		clearJoypad()
+		joypad.set({Down = 1})
+		clearJoypad()
+		joypad.set({Down = 1})
+		shortWait()
+	end
+	clearJoypad()
+	clearJoypad()
+	joypad.set({A = 1})				--execute selected attack
+	clearJoypad()
+	
+	console.write("Attack number ")
+	console.write(attackNumber)
+	console.write(" executed successfully.\n")
+end
+
+--
+--Presses B a certain number of times
+--line 86
+function skipABit(timesToPress)	
+	console.write("Pressing 'B' ")
+	console.write(timesToPress)
+	console.write(" times.\n")
+
+	local counter = 0
+	while counter < timesToPress do			--Loop to press 'B'
+		clearJoypad()
+		joypad.set({B = 1})
+		counter = counter + 1
+		longWait()
+		emu.frameadvance()
+	end
+	clearJoypad()
+end
+
+--
+--Resets the cursor in the battle screen to hover over the top left option
+--line 104
+function resetBattleScreen()
+	console.write("reseting cursur.\n")
+	skipABit(2)					--Press 'B' two times to back out of any dialogue
+	joypad.set({Left = 1})				--Press left and up to reach top left corner.
+	clearJoypad()
+	joypad.set({Up = 1})				--There are no wrap-arounds, so this will always lead to the top-left corner
+	clearJoypad()
+
+	console.write("cursor reset.\n")
+end
+
+--
+--Calculates how well the pokemon fought
+--line 118
+function fitness(fSHealth, oSHealth, turn)
+	local fCHealth = memory.read_u8(0x1016)
+	local oCHealth = memory.read_u8(0x0FE7)
+	local fMHealth = memory.read_u8(0x1024)
+	local oMHealth = memory.read_u8(0x0FF5)
+	
+	console.write("calculating fitness for previous fight... \n")
+
+	local mHealth = (fSHealth - fCHealth)/fMHealth
+	local oHealth = (oSHealth - oCHealth)/oMHealth
+	local prcnt = math.abs(oHealth - mHealth) * 100
+	local ans = math.pow(prcnt, 100/(99+turn))
+	if fCHealth == 0 then
+		ans = -ans
+	end
+	console.write("You got a fitness score of: ")
+	console.write(ans)
+	console.write("\n")
+	return ans
+end
+
+--
+--saves the fitness score of the highest scoring run
+--line 142
+function writeToFile(name, fitness, moves)
+	local f = io.open(name, "w")
+	f:write(tostring(fitness))
+	f:write("\n")
+	local max = table.maxn(moves)
+	for index = 1,max do
+		local x = moves[index]
+		f:write(tostring(x), "\n")
+	end
+	f:close()
+end
+
+
+--
+--completes a fight for the user
+--line 119
+function fight(myPID)
+	longWait()
+	local myPokemonID = mPID
+	local myPokemonHealth = memory.read_u8(0x1016)
+	local opponentPokemonHealth = memory.read_u8(0x0FE7)
+	local turn = 1
+	local moves = {}
+	console.write("Inside game loop.\n")
+	local rand = math.random(3)
+	moves[turn] = rand
+	makeAttack(rand)
+	longWait()
+	longWait()
+	longWait()
+	local gamestate = memory.read_u8(0x1)
+
+	while gamestate ~= 249 and gamestate ~= 149 do
+
+		if gamestate == myPokemonID then 	--My pokemon fainted
+			console.write("Oh no! my Pokemon has fainted.\n")
+			joypad.set({A = 1})
+			clearJoypad()
+			joypad.set({B = 1})
+			clearJoypad()
+			if memory.read_u8(0x1) < 20 then
+				console.write("Decided to disengage.\n")
+				return
+			else
+				break
+			end
+		elseif gamestate == 144 or gamestate == 166 then --waiting for attack, acknowledge miss or fail
+			local counter = 0
+			console.write("Decide to acknowledge or make an attack.\n")
+			while counter < 3 and (gamestate == 144 or gamestate == 166) do
+				if gamestate == 149 then
+ 					break 
+				end
+				console.write("acknowledge\n")
+				joypad.set({B = 1})
+				clearJoypad()
+				counter = counter + 1
+				longWait()
+				gamestate = memory.read_u8(0x1)
+				emu.frameadvance()
+			end
+			if gamestate == 149 then
+				break
+			end
+			gamestate = memory.read_u8(0x1)
+			if gamestate == 144 or gamestate == 166 then
+				console.write("Decided to attack.")
+				turn = turn + 1
+				local rand = math.random(3)
+				moves[turn] = rand
+				makeAttack(rand)
+				longWait()
+				longWait()
+				longWait()
+				longWait()
+			end
+		else 
+			console.write("Unknown gamestate code: ")
+			console.write(gamestate, "\n")
+			joypad.set({B = 1})
+			clearJoypad()
+		end
+
+		longWait()
+		gamestate = memory.read_u8(0x1)
+		emu.frameadvance()
+	end
+	local fit = fitness(myPokemonHealth, opponentPokemonHealth, turn)
+	--local file = io.open("PokemonMoves.txt", "w")
+	writeToFile("PokemonMoves.txt", fit, moves)
+	if gamestate == 249 then 			--wild pokemon encounter is over, we done
+		console.write("The wild Pokemon has fainted.\n")
+		shortWait()
+		skipABit(2)				--acknowledge pokemon defeat and accept XP
+		longWait()
+		gamestate = memory.read_u8(0x1)		
+		if gamestate == 134 then		--check for level gained
+			console.write("Congratulations! you gained a level.\n")
+			skipABit(1)
+			--TODO: check for move learned or evolution
+		end
+	elseif gamestate == 149 then			--trainer battle.
+		longWait()
+		skipABit(2)				--acknowledge pokemon defeat and accept XP
+		longWait()
+		gamestate = memory.read_u8(0x1)
+		if gamestate == 134 then		--check for level gained
+			console.write("Congratulations! you gained a level.\n")
+			joypad.set({B = 1})
+			clearJoypad()
+			longWait()
+			gamestate = memory.read_u8(0x1)
+			--TODO: check for move learned
+		end
+		if gamestate == 246 then
+			joypad.set({B = 1})
+			clearJoypad()
+			gamestate = memory.read_u8(0x1)
+			while gamestate == 144 do	--skip all dialogue
+				skipABit(1)
+				gamestate = memory.read_u8(0x1)
+				emu.frameadvance()
+			end
+			console.write("battle is over.\n")
+		else
+			skipABit(5)
+			fight(myPokemonID)
+		end
+	elseif gamestate == pokemonID then
+		joypad.set({Down = 1})
+		clearJoypad()
+		joypad.set({A = 1})
+		clearJoypad()
+		longWait()
+		longWait()
+		fight(memory.read_u8(0x1))
+	end
+end
+
+--
+--the gameLoop that is always running
+--line 146
+function main()	
+	local memLoc
+
+	while true do
+		memLoc = memory.read_u8(0x1)	--What is the current state of the game?
+		
+		if memLoc == 240 then		--Wild pokemon encounter
+			console.write("A wild Pokemon appeared!\n")
+			while memLoc == 240 do
+				shortWait()
+				memLoc = memory.read_u8(0x1)
+				emu.frameadvance()
+			end
+			longWait()
+			longWait()
+			skipABit(1)
+			longWait()
+			longWait()
+			fight(memory.read_u8(0x1))
+		elseif memLoc == 252 then
+			console.write("A Trainer wants to battle!\n")
+			while memLoc == 252 or memLoc == 144 do 	--disregard all text 
+				joypad.set({B = 1})
+				clearJoypad()
+				memLoc = memory.read_u8(0x1)
+				emu.frameadvance()
+			end
+			while memLoc ~= 233 do
+				longWait()
+				memLoc = memory.read_u8(0x1)
+				emu.frameadvance()
+			end
+			longWait()
+			skipABit(5)
+			fight(memory.read_u8(0x1))
+		end
+		emu.frameadvance()
+	end
+	
+end
+
+main()
