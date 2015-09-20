@@ -135,7 +135,24 @@ function fitness(fSHealth, oSHealth, turn)
 	console.write("You got a fitness score of: ")
 	console.write(ans)
 	console.write("\n")
+	return ans
 end
+
+--
+--saves the fitness score of the highest scoring run
+--line 142
+function writeToFile(name, fitness, moves)
+	local f = io.open(name, "w")
+	f:write(tostring(fitness))
+	f:write("\n")
+	local max = table.maxn(moves)
+	for index = 1,max do
+		local x = moves[index]
+		f:write(tostring(x), "\n")
+	end
+	f:close()
+end
+
 
 --
 --completes a fight for the user
@@ -146,8 +163,11 @@ function fight(myPID)
 	local myPokemonHealth = memory.read_u8(0x1016)
 	local opponentPokemonHealth = memory.read_u8(0x0FE7)
 	local turn = 1
+	local moves = {}
 	console.write("Inside game loop.\n")
-	makeAttack(math.random(3))
+	local rand = math.random(3)
+	moves[turn] = rand
+	makeAttack(rand)
 	longWait()
 	longWait()
 	longWait()
@@ -188,8 +208,10 @@ function fight(myPID)
 			gamestate = memory.read_u8(0x1)
 			if gamestate == 144 or gamestate == 166 then
 				console.write("Decided to attack.")
-				makeAttack(math.random(3))
 				turn = turn + 1
+				local rand = math.random(3)
+				moves[turn] = rand
+				makeAttack(rand)
 				longWait()
 				longWait()
 				longWait()
@@ -206,8 +228,9 @@ function fight(myPID)
 		gamestate = memory.read_u8(0x1)
 		emu.frameadvance()
 	end
-	fitness(myPokemonHealth, opponentPokemonHealth, turn)
-	
+	local fit = fitness(myPokemonHealth, opponentPokemonHealth, turn)
+	--local file = io.open("PokemonMoves.txt", "w")
+	writeToFile("PokemonMoves.txt", fit, moves)
 	if gamestate == 249 then 			--wild pokemon encounter is over, we done
 		console.write("The wild Pokemon has fainted.\n")
 		shortWait()
