@@ -1,327 +1,929 @@
---
---This method will wait for 20 frames
---line 3
-function shortWait()
+--AI Battle script
+--Caleb Hodges
+
+
+
+--	 __      __   __________   __________   __
+--	|  |    |  | |          | |          | |  |
+--	|  |    |  | |___    ___| |___    ___| |  |
+--	|  |    |  |     |  |         |  |     |  |
+--	|  |    |  |     |  |         |  |     |  |
+--	|  |    |  |     |  |         |  |     |  |
+--	|  |    |  |     |  |         |  |     |  |
+--	|  |____|  |     |  |      ___|  |___  |  |______  
+--	|_        _|     |  |     |          | |         |
+--	  |______|       |__|     |__________| |_________|
+
+
+
+--Params: location, the hexadecimal location in RAM that we want to access
+--Returns: data, the data stored at location
+--Description: reads the location given in RAM and returns the data found there
+function get(location)
+	
+	local data = memory.read_u8(location)		--reads the location in memory
+	return data					--and returns it
+
+end
+
+
+--Params: num, the number of seconds we should wait
+--Returns: null
+--Description: the game runs at 60 frames per second, so we advance 60 frames times the number specified
+function longWait(secondsToWait)
+	
 	local counter = 0
-	while counter < 20 do 				--Loop 20 times updating frames every time
+	local framesToWait = 60 * secondsToWait
+	
+	while counter < framesToWait do
 		emu.frameadvance()
 		counter = counter + 1
 	end
 end
 
---
---Resets the joypad to having no buttons pressed
---line 14
-function clearJoypad()
-	shortWait()
-	client.clearautohold()				--Sets all button values to 0
-	shortWait()
-end
 
---
---waits 80 frames, or two seconds at 100% speed
---
-function longWait()
-	local counter = 0
-	while counter < 80 do
-		emu.frameadvance()
-		counter = counter + 1
-	end
-end
-
----
----Resets the attack selection screen to selecting the top option
----line 34
-function resetAttackSelected(currSelect)
-	while currSelect > 1 do
-		clearJoypad()
-		joypad.set({Up = 1})
-		currSelect = currSelect - 1
-		clearJoypad()
-		emu.frameadvance()
-	end
-	clearJoypad()		
-end
-
---
---Randomly chooses and executes attack 1, 2, or 3
---line 48
-function makeAttack(attackNumber)			
-	console.write("Making attack number: ")
-	console.write(attackNumber)
-	console.write("\n")
-
-	clearJoypad()
-	joypad.set({A=1})				--enter the attack screen
-	shortWait()	
-
-	currSelected = memory.read_u8(0x0C26)
-	console.write("Resetting the selected attack.\n")
-	resetAttackSelected(currSelected)
-	
-	if (attackNumber == 2)	then			--select attack 2
-		clearJoypad()		
-		joypad.set({Down = 1})
-		shortWait()
-	end
-	if (attackNumber == 3) then			--select attack 3
-		clearJoypad()
-		joypad.set({Down = 1})
-		clearJoypad()
-		joypad.set({Down = 1})
-		shortWait()
-	end
-	clearJoypad()
-	clearJoypad()
-	joypad.set({A = 1})				--execute selected attack
-	clearJoypad()
-	
-	console.write("Attack number ")
-	console.write(attackNumber)
-	console.write(" executed successfully.\n")
-end
-
---
---Presses B a certain number of times
---line 86
+--Params: (int) timesToPress, the number of times 'B' should be pressed
+--Returns: null
+--Description: Presses B then waits one second, for as many times as the user specifies
 function skipABit(timesToPress)	
-	console.write("Pressing 'B' ")
-	console.write(timesToPress)
-	console.write(" times.\n")
+	
+local counter = 0
 
-	local counter = 0
 	while counter < timesToPress do			--Loop to press 'B'
-		clearJoypad()
 		joypad.set({B = 1})
 		counter = counter + 1
-		longWait()
+		client.clearautohold()
+		longWait(1)				--wait for the emulator to process the "B" press
+		emu.frameadvance()			--necessary for loops
+	end
+
+end
+
+
+--Params: null
+--Returns: null
+--Description: Resets the joypad to having no buttons pressed
+function clearJoypad()
+
+	longWait(0.25)					--Wait 1/4 of a second to ensure the emulator receives command
+	client.clearautohold()				--Sets all button values to 0
+	longWait(0.25)					--Wait 1/4 of a second to make sure the emulator finishes executing command
+
+end
+
+--Params: (int) animationCodeToSkip, the hexadecimal value of the gamestate corresponding to the animation being performed
+--Returns: null
+--Description: waits until the code given is no longer the gamestate
+function waitForAnimation(animationCodeToSkip)
+	
+	--console.write("Skipping the gamestate: ", animationCode, "\n")
+
+	while get(theGameState) == animationCodeToSkip do
+		longWait(0.1)
 		emu.frameadvance()
 	end
-	clearJoypad()
 end
 
---
---Resets the cursor in the battle screen to hover over the top left option
---line 104
-function resetBattleScreen()
-	console.write("reseting cursur.\n")
-	skipABit(2)					--Press 'B' two times to back out of any dialogue
-	joypad.set({Left = 1})				--Press left and up to reach top left corner.
-	clearJoypad()
-	joypad.set({Up = 1})				--There are no wrap-arounds, so this will always lead to the top-left corner
-	clearJoypad()
 
-	console.write("cursor reset.\n")
+--Params: (int) gamestateCodeToSkip, the hexadecimal gamestate code to try to skip
+--Returns: null
+--Description: rapidly presses ‘B’ until the gamestate is no longer the given code
+function rapidBPress(gamestateCodeToSkip)
+
+	while get(theGameState) == gamestateCodeToSkip do
+		joypad.set({B = 1})
+		longWait(0.1)
+		client.clearautohold()
+		emu.frameadvance()
+	end
 end
 
---
---Calculates how well the pokemon fought
---line 118
-function fitness(fSHealth, oSHealth, turn)
-	local fCHealth = memory.read_u8(0x1016)
-	local oCHealth = memory.read_u8(0x0FE7)
-	local fMHealth = memory.read_u8(0x1024)
-	local oMHealth = memory.read_u8(0x0FF5)
-	
+
+--Params: Null
+--Returns: Null
+--Description: Waits for the level up text to go away.
+function levelGained()
+
+	console.write("Congratulations! You gained a level.\n")
+	longWait(1)
+	joypad.set({B = 1})
+	client.clearautohold()
+	longWait(3)
+	local gamestate = get(theGameState)
+	--if gamestate == 				--check for move learned or evolution
+	--	
+	--end
+end
+
+
+--Params: moveBank, the set of moves that should be used.
+--	     turnNumber, how many moves I have made so far
+--Returns: a number between 1 and 4 that corresponds to the move to be made next
+--Description: looks at moveBank[turnNumber] and returns the value found, if it finds nothing returns random(4)
+function getNextMove(moveBank, turnNumber)
+
+	local randomMove = math.random(4)
+
+	if moveBank == null then
+		return randomMove
+	elseif moveBank[1] == null then
+		return randomMove
+	elseif turnNumber > #moveBank then
+		return randomMove
+	else
+		--console.write("Moves: ", moveBank, "\n")
+		--console.write("Turn Num: ", turnNumber, "\n")
+		--console.write("Returning Next Move: ", moveBank[turnNumber], "\n")
+		return moveBank[turnNumber]
+	end
+
+end
+
+
+
+
+
+--	 _______   __________   ____________
+--	|       | |	     | |            |
+--	|   ____| |___    ___| |____    ____|
+--	|  |	      |  |          |  |
+--	|  |___	      |  |          |  |
+--	|      |      |  |          |  |
+--	|   ___|      |  |          |  |
+--	|  |	      |  |          |  |
+--	|  |	   ___|  |___       |  |
+--	|  |	  |          |      |  |
+--	|__|	  |__________|      |__|
+
+
+
+
+
+--Params: (int) friendlyStartingHealth, the health at which your Pokemon starts the fight
+--	  (int) opponentStartingHealth, the health at which your opponent’s Pokemon starts at
+--	  (int) turn, the turn number the fought ended on
+--Returns: (double) ans, the calculated fitness score
+--Description: Calculates how well the pokemon fought using the following algorithm where
+--		A = Percent health my pokemon lost
+--		B = Percent health the opponent’s pokemon lost
+--		C = Turn number
+--		abs(  B - A ) ^ (100/(99+C))
+--	If my pokemon lost the battle, then the score will be negated.
+
+function fitness(friendlyStartingHealth, opponentStartingHealth, turn)
+	local friendlyCurrentHealth = get(myCurrentHealth)		--get my Pokemon’s current health
+	local friendlyMaxHealth = get(myMaxHealth)		--get my Pokemon’s max health
+	local friendlyHealthLost = friendlyStartingHealth - friendlyCurrentHealth	--find how much health I lost in the fight
+	local friendlyPercentHealthLost = (friendlyHealthLost/friendlyMaxHealth)*100	--get the percentage health I lost
+
+	local opponentCurrentHealth = get(opponentCurrentHealth)	--get opponent Pokemon’s current health
+	local opponentMaxHealth = get(opponentMaxHealth)		--get opponent Pokemon’s max health
+	local opponentHealthLost = opponentStartingHealth - opponentCurrentHealth	--find how much health the opponent lost in the fight
+	local opponentPercentHealthLost = (opponentHealthLost/opponentMaxHealth)*100	--get the percentage health the opponent lost
+
 	console.write("calculating fitness for previous fight... \n")
 
-	local mHealth = (fSHealth - fCHealth)/fMHealth
-	local oHealth = (oSHealth - oCHealth)/oMHealth
-	local prcnt = math.abs(oHealth - mHealth) * 100
-	local ans = math.pow(prcnt, 100/(99+turn))
-	if fCHealth == 0 then
-		ans = -ans
+	local difference = math.abs(opponentPercentHealthLost - friendlyPercentHealthLost)	--subtract percentages
+	local answer = math.pow(difference, 100/(99+turn))	--influencing the score based on how long the battle took
+	if friendlyCurrentHealth == 0 then
+		answer = answer * -1			--make it negative if my Pokemon lost
 	end
-	console.write("You got a fitness score of: ")
-	console.write(ans)
-	console.write("\n")
-	return ans
+	console.write("You got a fitness score of: ", answer, "\n")
+	return answer
 end
 
---
---saves the fitness score of the highest scoring run
---line 142
-function writeToFile(name, fitness, moves)
-	local f = io.open(name, "w")
-	f:write(tostring(fitness))
-	f:write("\n")
-	local max = table.maxn(moves)
-	for index = 1,max do
-		local x = moves[index]
-		f:write(tostring(x), "\n")
+
+--	 _______   __________   __          _________
+--	|       | |	     | |  |        |         |
+--	|   ____| |___    ___| |  |        |   ______|
+--	|  |	      |  |     |  |        |  |
+--	|  |___	      |  |     |  |        |  |___
+--	|      |      |  |     |  |        |      |
+--	|   ___|      |  |     |  |        |   ___|
+--	|  |	      |  |     |  |        |  |
+--	|  |	   ___|  |___  |  |______  |  |______
+--	|  |	  |          | |         | |         |
+--	|__|	  |__________| |_________| |_________|
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	     opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: Null
+--Description: checks to make sure there is an entry for this specific combination of pokemon
+function makeSureItExists(myPokemonIDNumber, opponentPokemonIDNumber)
+	local newMoveBank = {{1, 0, 0}}
+	if pokemonMoveBank == null then
+		--console.write("the PokemonMoveBank is null.\n")
+		local newMoveBankLayer2 = {[tostring(opponentPokemonIDNumber)] = newMoveBank}
+		pokemonMoveBank = {[tostring(myPokemonIDNumber)] = newMoveBankLayer2}
+	elseif pokemonMoveBank[tostring(myPokemonIDNumber)] == null then
+		--console.write("This Pokemon has never been used before.\n")
+		--for k,v in pairs(pokemonMoveBank) do
+		--	console.write(k, " : ", v, "\n")
+		--end
+		local newMoveBankLayer2 = {[tostring(opponentPokemonIDNumber)] = newMoveBank}
+		pokemonMoveBank[tostring(myPokemonIDNumber)] = newMoveBankLayer2
+	elseif pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] == null then
+		--console.write("this Pokemon has never been faced before.\n")
+		pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = newMoveBank
 	end
-	f:close()
+end
+
+
+--Params: (int) myPokemonIDNumber, the unique ID number of my Pokemon
+--	  (int) opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: null
+--Description: updates the genome to the newest iteration
+function updateGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+	--makeSureItExists(myPokemonIDNumber, opponentPokemonIDNumber)
+	local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+	--console.write("the length of the moveBank is ", #moveBank, "\n")
+	local genome = moveBank[1]
+	genome[3] = #moveBank-1
+	--console.write("setting genome to ", genome, "\n")
+	moveBank[1] = genome
+	pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank
+end
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent’s Pokemon
+--Returns: genome, the genome of the specified section of the evolutionary AI
+--Description: gets the genome for the sspecified section of the evolutionary AI
+function getGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+	--console.write("Getting the genome for FmyPokemonIDNumber#: ", myPokemonIDNumber, " opponentPokemonIDNumber#: ", opponentPokemonIDNumber, "\n")
+	makeSureItExists(myPokemonIDNumber, opponentPokemonIDNumber)
+	local genome = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)][1]
+	--console.write("The retrieved genome is ", genome, "\n")
+	return genome	
+end
+
+
+--Params: moveBank, the dataset that contains the movesets that have been used previously
+--	     moveSet, the moveset that we will comping to the movesets in moveBank
+--Returns: an integer that is the index in moveBank where the duplicate moveSet was found. -1 if not found
+--Description: iterates through moveBank and compares the movesets within to the parameter moveset.
+function isSameMoveset(moveBank, moveSet)
+	local isSame = true
+	local shorter = {}
+	local longer = {}
+
+	--move through each moveset to compare to the one given
+	for var = 2, #moveBank do
+		--the variable to tell if our moveset is the same as the one given
+		isSame = true
+
+		--check to see which one is shorter in order to avoid index out of bounds errors
+		if #moveBank[var] ~= #moveSet then
+			isSame = false
+		end
+
+		--actually going through and seeing if they are the same
+		var2 = 2
+		while var2 <= #moveBank[var] and isSame do
+			if moveBank[var][var2] ~= moveSet[var2] then
+				isSame = false
+				break
+			end
+			var2 = var2 + 1
+		end
+	
+		--if they are the same, then we return the index of moveBank where the same moveset is stored
+		if isSame == true then 
+			return var
+		end
+	end
+
+	--if they are not the same, then we return negative one
+	return -1
+end
+
+--Params: moveBank, the moveBank that we will be inserting the moveSet into
+--	     moveSet, the moveSet that will be inserted into moveBank
+--Returns: newMoveBank, the moveBank with moveSet inserted in the correct spot
+--Description: looks at the fitness of each moveset and inserts the new moveSet above the first fitness score that is lower than the new moveSet’s fitness score
+function insertMoveSetInMoveBank(moveBank, moveset)
+	local fitnessScore = moveset[1]
+	local newMoveBank = {moveBank[1]}		--inserting the genome since it doesn’t need to be compared
+	local inserted = false
+
+	for index = 2, #moveBank do
+		local isBigger = fitnessScore > moveBank[index][1]
+		if inserted == false and isBigger then
+			--console.write("inserting newest moveset into the pokemonMoveBank\n")
+			table.insert(newMoveBank, moveset)
+			inserted = true
+		end
+		table.insert(newMoveBank, moveBank[index])
+	end
+	if inserted == false then
+		table.insert(newMoveBank, moveset)
+	end
+	
+	return newMoveBank
+end
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent’s Pokemon
+--	  fitnessScore, the fitness score that the moveset received
+--	  movesUsed, the moves that my Pokemon used in the latest battle
+--Returns: null
+--Description: Saves the moves used into the correct space in the pokemonMovesBank table
+function storeMoves(myPokemonIDNumber, opponentPokemonIDNumber, fitnessScore, movesUsed)
+	local moveset = {fitnessScore}
+
+	for index = 1,#movesUsed do
+		moveset[index+1] = movesUsed[index]
+	end
+
+	makeSureItExists(myPokemonIDNumber, opponentPokemonIDNumber)
+	--console.write("Storing moves. myPokemonIDNumber: ", myPokemonIDNumber, " opponentPokemonIDNumber: ", opponentPokemonIDNumber, "\n")
+	local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+		
+	local result = isSameMoveset(moveBank, moveset)
+	--console.write("This is the result of isSameMoveset: ", result, "\n")
+	if result ~= -1 then
+		local part1 = moveBank[result][1] * 0.875
+		local part2 = fitnessScore * 0.125
+		local ans = part1 + part2
+		moveBank[result][1] = ans		--This is the weighted average of the old and new fitness of a specific, previously used moveset that has changed for some reason.
+		--console.write("modifying moveset #", result, "\n")
+		pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank
+	else
+		longWait(1)
+		if moveBank[1][3] == 0 then		--this is the genome, we are looking at how many movesets are in the movebank
+			--console.write("Starting new Species.\n")
+			moveBank = {{1, 0, 1}, moveset}
+		else
+			--console.write("Adding on to an established Species.\n")
+			moveBank = insertMoveSetInMoveBank(moveBank, moveset)
+		end
+		pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank 
+		updateGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+	end
+end
+
+
+
+--Params: null
+--Returns: boolean, whether or not the file exists
+--Description: attempts to open the file. If file exists, close file and return true. else return false
+function fileExists()
+	console.write("Does the file exist? ")
+	local f = assert(io.open("PokemonMoves.txt", "r"))	--try to open the file
+	if f == null then
+		console.write("The file does not exist.\n")
+		return false 
+	else	
+		console.write("The file exists.\n")
+		f:close(f)				--You opened the file, so now you have to close it.
+		return true
+	end 
+end
+
+
+--Params: filename, the filename to be opened and rewritten
+--Returns: Null
+--Description: Open the file and completly rewrite it with the data we have in memory
+function writeToFile(filename)
+	local file = io.open("../PokemonMoves.txt", "w+")
+	--console.write("saving the file\n")
+	for k,v in pairs(pokemonMoveBank) do
+		for k2,v2 in pairs(v) do
+			file:write("PID ", tostring(k), " OPID ", tostring(k2), "\n")
+			--console.write("PID ", k, " OPID ", k2, "\n")
+			for index = 1,#v2 do
+				for index2 = 1,#v2[index] do
+					--console.write(v2[index][index2], " ")
+					file:write(tostring(v2[index][index2]), " ")
+				end
+				--console.write("\n")
+				file:write("\n")
+			end
+		end
+	end
+	file:close()
+end
+
+
+--Params: filename, the file to read
+--Returns: Null
+--Description: reads the contents of a file and puts it into a 3D table with a two-part key as the first index
+function readFromFile(filename)
+	local wordsInLine = {}
+	local moveBank = {}
+	local line
+	local opponentPokemonIDNumber
+	local myPokemonIDNumber
+	local f 
+
+	if fileExists(filename) then
+		f = io.open(filename, "r")
+	else
+		console.write("Formatting Error while reading PokemonMoves.txt\n")
+		return
+	end
+
+	console.write("Reading file.\n")
+	line = f:read("*l")
+
+	while line ~= null do						--the myPokemonIDNumber loop
+		wordsInLine = {}
+		for word in string.gmatch(line, "%w+") do
+			table.insert(wordsInLine, word)
+		end
+		if wordsInLine[1] == "PID" and wordsInLine[3] == "OPID" then
+			myPokemonIDNumber = wordsInLine[2]
+			opponentPokemonIDNumber = wordsInLine[4]
+			--console.write("myPokemonIDNumber ", myPokemonIDNumber, " opponentPokemonIDNumber ", opponentPokemonIDNumber, "\n")
+		end
+		moveBank = {}
+		line = f:read("*l")
+		while line ~= null do				--the inner loop
+			wordsInLine = {}
+			for word in string.gmatch(line, "%w+") do
+				table.insert(wordsInLine, word)
+			end
+			if wordsInLine[1] == "PID" or wordsInLine[3] == "OPID" then
+				break
+			end
+			local moves = {}
+			index = 1
+			while index <= #wordsInLine do			--the final loop
+				local number = tonumber(wordsInLine[index])
+				if number > 100 then
+					moves[index-1] = tonumber(tostring(moves[index-1]) .. "." .. tostring(number))
+				else
+					table.insert(moves, number)
+				end
+				index = index + 1
+				--console.write(tostring(moves[index]), " ")
+			end
+			table.insert(moveBank, moves)
+			--console.write("\n")
+			line = f:read("*l")
+		end
+		makeSureItExists(tonumber(myPokemonIDNumber), tonumber(opponentPokemonIDNumber))
+		pokemonMoveBank[myPokemonIDNumber][opponentPokemonIDNumber] = moveBank
+	end
+	io.close(f)
+end
+
+
+--	   _____     __________ 
+--	 _|     |_  |          |
+--	|   ___   | |___    ___|
+--	|  |   |  |     |  |    
+--	|  |___|  |     |  |    
+--	|         |     |  |     
+--	|   ___   |     |  |    
+--	|  |   |  |     |  |    
+--	|  |   |  |  ___|  |___ 
+--	|  |   |  | |          |
+--	|__|   |__| |__________|
+
+
+--Params: moveSet1, the first set of moves that we draw from to create a new moveset
+--	     moveSet2, the second set of moves to draw from
+--Returns: combinedMoveSet, the combination of moveSet1 & moveSet2
+--Description: takes two movesets and combines them to produce a new moveset
+function combine(moveSet1, moveSet2)
+	--only want to put as many moves in as the smallest one has.
+	--then, append the rest of the moves in the larger one.
+	--moveSet1 is the better run
+	local moves1 = moveSet1
+	local moves2 = moveSet2
+	local lengthOfMoveSet1 = #moves1
+	local lengthOfMoveSet2 = #moves2
+	local shorter = {}
+	local longer = {}
+	local index = 2
+	local combinedMoveSet = {}	--note that the combined moveset has no fitness score, as it has not been tested
+
+	if lengthOfMoveSet1 > lengthOfMoveSet2 then
+		shorter = moveSet2
+		longer = moveSet1
+	else
+		shorter = moveSet1
+		longer = moveSet2
+	end
+	
+	local lengthOfShorter = #shorter
+	local count
+
+	for index=2,lengthOfShorter do
+		if math.random(2) == 1 then
+			combinedMoveSet[index - 1] = moveSet2[index]
+		else
+			combinedMoveSet[index - 1] = moveSet1[index]
+		end
+		count = index
+	end
+
+	local lengthOfLonger = #longer
+
+	for index=count+1,lengthOfLonger do
+		combinedMoveSet[index-1] = longer[index]
+	end
+
+	return combinedMoveSet
+end
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: null
+--Description: deletes all entries except the genome and three runs from the species
+function deleteTo3(myPokemonIDNumber, opponentPokemonIDNumber)
+	makeSureItExists(myPokemonIDNumber, opponentPokemonIDNumber)
+	local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+	while #moveBank > 4 do
+		table.remove(moveBank, 5)
+	end
+	pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank
+end
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: movesToBeUsed, a table of the moves to be used
+--Description: handles the execution of creating new moves in an unestablished species
+function firstSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+		local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+		local genome = moveBank[1]
+		local species = genome[1]
+		local generation = genome[2]
+		local mutation = genome[3]
+		local movesToBeUsed = {}
+		
+		if generation > 3 then
+			createNewSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+			return laterSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+		elseif generation ~= 0 or mutation == 6 then
+			if mutation == 6 then
+				deleteTo3(myPokemonIDNumber, opponentPokemonIDNumber)
+				pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)][1][2] = generation + 1
+				movesToBeUsed = combine(moveBank[2], moveBank[3])
+			elseif mutation == 4 then
+				movesToBeUsed = combine(moveBank[3], moveBank[4])
+			else 
+				movesToBeUsed = combine(moveBank[2], moveBank[4])
+			end
+		end
+		updateGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+		return movesToBeUsed
+end
+
+--Params:myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: {}, the move set to be used.
+--Description: changes the genome and the movesets to become a new species
+function createNewSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+		local genome = getGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+		local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+		while #moveBank > 3 do
+			table.remove(moveBank, 4)
+		end
+		genome[1] = genome[1] + 1
+		genome[2] = 0
+		genome[3] = 2
+		moveBank[1] = genome
+		pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank
+		return
+end
+
+
+--Params: myPokemonIDNumber, the unique ID number of my Pokemon
+--	  opponentPokemonIDNumber, the unique ID number of my opponent Pokemon
+--Returns: movesToBeUsed, a table of the moves to be used
+--Description: handles the execution of creating moves in an established species.
+function laterSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+		local moveBank = pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)]
+		local genome = moveBank[1]
+		local species = genome[1]
+		local generation = genome[2]
+		local mutation = genome[3]
+		local movesToBeUsed = {}
+
+		if generation ~= 0 or mutation == 11 then
+			if generation > 4 then
+				createNewSpecies(myPokemonIDNumber, opponentPokemonIDNumber)
+				return movesToBeUsed
+			elseif mutation == 3 then
+				movesToBeUsed = combine(moveBank[2], moveBank[3])
+			elseif mutation == 4 then
+				movesToBeUsed = combine(moveBank[3], moveBank[4])
+			elseif mutation == 5 then
+				movesToBeUsed = combine(moveBank[2], moveBank[4])
+			elseif mutation == 11 then
+				table.remove(moveBank, 2)
+				table.remove(moveBank, 2)
+				pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)] = moveBank
+				deleteTo3(myPokemonIDNumber, opponentPokemonIDNumber)
+				pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)][1][2] = generation + 1
+				movesToBeUsed = combine(moveBank[2], moveBank[3])
+				updateGenome(myPokemonIDNumber, opponentPokemonIDNumber)
+			else
+				deleteTo3(myPokemonIDNumber, opponentPokemonIDNumber)
+				pokemonMoveBank[tostring(myPokemonIDNumber)][tostring(opponentPokemonIDNumber)][1][2] = generation + 1
+				movesToBeUsed = combine(moveBank[2], moveBank[3])
+			end
+		else
+			if mutation > 7 then
+				movesToBeUsed = combine(moveBank[3], moveBank[mutation - 5])
+			elseif mutation > 4 then
+				movesToBeUsed = combine(moveBank[2], moveBank[mutation - 2])
+			end
+		end
+	
+		return movesToBeUsed
+end
+
+
+--Params: myPokemonID, the unique ID number of my Pokemon
+--	  opponentPokemonID, the unique ID number of my opponent Pokemon
+--Returns: moves, the table containing the moves to be used
+--Description: returns the moveset that should be used, if everything goes according to plan
+function chooseMoves(myPokemonID, opponentPokemonID)
+	local genome = getGenome(myPokemonID, opponentPokemonID)
+	local species = genome[1]
+	local moves = {}
+		
+	if species == 1 then
+		moves = firstSpecies(myPokemonID, opponentPokemonID)
+	else
+			moves = laterSpecies(myPokemonID, opponentPokemonID)
+	end
+
+	return moves
+end
+
+
+--	 ______       _____     __________   __________   __          _________
+--	|      \    _|     |_  |          | | 	       | |  |        |         |
+--	|   __  \  |   ___   | |___    ___| |___    ___| |  |        |   ______|
+--	|  |  |  | |  |   |  |     |  |         |  |     |  |        |  |
+--	|  |__|  | |  |___|  |     |  |         |  |     |  |        |  |___
+--	|       /  |         |     |  |         |  |     |  |        |      |
+--	|   __  \  |   ___   |     |  |         |  |     |  |        |   ___|
+--	|  |  |  | |  |   |  |     |  |         |  |     |  |        |  |
+--	|  |__|  | |  |   |  |     |  |         |  |     |  |______  |  |______
+--	|       /  |  |   |  |     |  |         |  |     |         | |         |
+--	|______/   |__|   |__|     |__|         |__|     |_________| |_________|
+
+
+
+--Params: myPokemonIDNumber, the ID of my current Pokemon
+--Returns: null
+--Description: After a trainer has been defeated, it reads the game state and decides what to do next
+
+function trainerPokemonFaint(myPokemonIDNumber)
+	longWait(1)
+	skipABit(2)				--acknowledge Trainer Pokemon defeated and accept XP
+	longWait(1)
+	local gamestate = get(theGameState)	--what is the game state now?
+
+	if gamestate == 134 then		--check for level gained
+		levelGained()
+	end
+
+	gamestate = get(theGameState)		--get the new gamestate
+
+	if gamestate == 246 then		--trainer is defeated
+		joypad.set({B = 1})		--acknowledge victory
+		client.clearautohold()
+		gamestate = get(theGameState)	--update the gamestate
+		while gamestate == 144 do	--skip all dialogue
+			skipABit(1)
+			gamestate = get(theGameState)
+			emu.frameadvance()	--neccessary for loops
+		end
+		console.write("You won the battle!\n")
+	else					--another Pokemon is up
+		skipABit(5)
+		fight(myPokemonIDNumber)		--fight the next Pokemon
+	end
+end
+
+
+--Params: opponentPokemonIDNumber
+--Returns: null
+--Description: When my Pokemon faints, read the gamestate and decide to fight or flee
+
+function myPokemonFaint(opponentPokemonIDNumber)
+	console.write("Oh no! my Pokemon has fainted.\n")
+	joypad.set({A = 1})			--acknowledge that my Pokemon fainted
+	longWait(1)
+	joypad.set({B = 1})			--If it is a wild battle, attempt to run away
+	clearJoypad()
+	if get(theGameState) < 20 then		--If if did run away, I should break back to the main loop
+		console.write("Decided to disengage.\n")
+		return
+	else					--This is a Trainer battle, there is no running away
+		joypad.set({Down = 1})		
+		joypad.set({A = 1})		--Send out the next Pokemon in your party
+		clearJoypad()
+		fight(get(theGameState), opponentPokemonIDNumber)	--your Pokemon's ID is now the gamestate. send it as a param to fight
+	end					--and continue the Trainer battle.
+end
+
+
+--Params: null
+--Returns: null
+--Description: the wild Pokemon has fainted. close out the dialoge in order to return to main game loop
+
+function wildPokemonFaint()
+	--console.write("The wild Pokemon has fainted.\n")
+	longWait(1)
+	skipABit(1)
+	longWait(1)
+	skipABit(1)				--acknowledge pokemon defeat and accept XP
+	longWait(2)
+	gamestate = get(theGameState)		
+	if gamestate == 134 then		--check for level gained
+		levelGained()
+	end
+end
+
+
+--Params: attackToBeMade, a number 1-4 of the index of attack to be made
+--Returns: text1ID, the ID number of the text1 state of battle
+--Description: enters the attack screen, selects the attack to be made and executes it
+function makeAttack(attackToBeMade)
+longWait(2)
+	joypad.set({A = 1})
+	longWait(2)
+	client.clearautohold()
+	console.write("making attack number ", attackToBeMade, "\n")
+	local attackCurrentlySelected = get(attackSelected)
+	while attackToBeMade ~= attackCurrentlySelected do
+		if attackToBeMade < attackCurrentlySelected then
+			joypad.set({Up = 1})
+			client.clearautohold()
+			attackCurrentlySelected = attackCurrentlySelected - 1
+			longWait(2)
+		elseif attackToBeMade > attackCurrentlySelected then
+			joypad.set({Down = 1})
+			client.clearautohold()
+			attackCurrentlySelected = attackCurrentlySelected + 1
+			longWait(2)
+		end
+		emu.frameadvance()
+	end
+	joypad.set({A = 1})
+	longWait(2)
+	client.clearautohold()
+	--longWait(3)
+	return text1ID		
 end
 
 
 --
 --completes a fight for the user
 --line 119
-function fight(myPID)
-	longWait()
-	local myPokemonID = mPID
-	local myPokemonHealth = memory.read_u8(0x1016)
-	local opponentPokemonHealth = memory.read_u8(0x0FE7)
+function fight(myPokemonIDNumber, opponentPokemonIDNumber)
+	longWait(1)
 	local turn = 1
-	local moves = {}
-	console.write("Inside game loop.\n")
-	local rand = math.random(3)
-	moves[turn] = rand
-	makeAttack(rand)
-	longWait()
-	longWait()
-	longWait()
-	local gamestate = memory.read_u8(0x1)
+	local myPokemonHealth = get(myCurrentHealth)
+	local opponentPokemonHealth = get(opponentCurrentHealth)
+	local moveBank = chooseMoves(myPokemonIDNumber, opponentPokemonIDNumber)
+	local attackToBeMade = getNextMove(moveBank, turn)
+	local movesUsed = {attackToBeMade}
+	--console.write("Inside game loop.\n")
+	makeAttack(attackToBeMade)
+	longWait(5)
+	local gamestate = get(theGameState)
 
 	while gamestate ~= 249 and gamestate ~= 149 do
 
 		if gamestate == myPokemonID then 	--My pokemon fainted
-			console.write("Oh no! my Pokemon has fainted.\n")
-			joypad.set({A = 1})
-			clearJoypad()
-			joypad.set({B = 1})
-			clearJoypad()
-			if memory.read_u8(0x1) < 20 then
-				console.write("Decided to disengage.\n")
-				return
-			else
-				break
-			end
+			myPokemonFaint(opponentPokemonIDNumber)
 		elseif gamestate == 144 or gamestate == 166 then --waiting for attack, acknowledge miss or fail
 			local counter = 0
-			console.write("Decide to acknowledge or make an attack.\n")
-			while counter < 3 and (gamestate == 144 or gamestate == 166) do
+			--console.write("Decide to acknowledge or make an attack.\n")
+			while counter < 4 and (gamestate == 144 or gamestate == 166) do
 				if gamestate == 149 then
  					break 
 				end
-				console.write("acknowledge\n")
+				--console.write("acknowledge\n")
 				joypad.set({B = 1})
-				clearJoypad()
+				client.clearautohold()
 				counter = counter + 1
-				longWait()
-				gamestate = memory.read_u8(0x1)
+				longWait(1)
+				gamestate = get(theGameState)
 				emu.frameadvance()
 			end
 			if gamestate == 149 then
 				break
 			end
-			gamestate = memory.read_u8(0x1)
+			gamestate = get(theGameState)
 			if gamestate == 144 or gamestate == 166 then
-				console.write("Decided to attack.")
+				--console.write("Decided to attack.")
 				turn = turn + 1
-				local rand = math.random(3)
-				moves[turn] = rand
-				makeAttack(rand)
-				longWait()
-				longWait()
-				longWait()
-				longWait()
+				attackToBeMade = getNextMove(moveBank, turn)
+				table.insert(movesUsed, attackToBeMade)
+				--longWait(0.5)
+				makeAttack(attackToBeMade)
+				longWait(1)
+				longWait(1)
+				longWait(1)
+				longWait(1)
 			end
 		else 
-			console.write("Unknown gamestate code: ")
-			console.write(gamestate, "\n")
+			--console.write("Unknown gamestate code: ", gamestate, "\n")
 			joypad.set({B = 1})
 			clearJoypad()
 		end
 
-		longWait()
-		gamestate = memory.read_u8(0x1)
+		longWait(1)
+		gamestate = get(theGameState)
 		emu.frameadvance()
 	end
 	local fit = fitness(myPokemonHealth, opponentPokemonHealth, turn)
-	--local file = io.open("PokemonMoves.txt", "w")
-	writeToFile("PokemonMoves.txt", fit, moves)
+	storeMoves(myPokemonIDNumber, opponentPokemonIDNumber, fit, movesUsed)
 	if gamestate == 249 then 			--wild pokemon encounter is over, we done
-		console.write("The wild Pokemon has fainted.\n")
-		shortWait()
-		skipABit(2)				--acknowledge pokemon defeat and accept XP
-		longWait()
-		gamestate = memory.read_u8(0x1)		
-		if gamestate == 134 then		--check for level gained
-			console.write("Congratulations! you gained a level.\n")
-			skipABit(1)
-			--TODO: check for move learned or evolution
-		end
+		wildPokemonFaint()
 	elseif gamestate == 149 then			--trainer battle.
-		longWait()
-		skipABit(2)				--acknowledge pokemon defeat and accept XP
-		longWait()
-		gamestate = memory.read_u8(0x1)
-		if gamestate == 134 then		--check for level gained
-			console.write("Congratulations! you gained a level.\n")
-			joypad.set({B = 1})
-			clearJoypad()
-			longWait()
-			gamestate = memory.read_u8(0x1)
-			--TODO: check for move learned
-		end
-		if gamestate == 246 then
-			joypad.set({B = 1})
-			clearJoypad()
-			gamestate = memory.read_u8(0x1)
-			while gamestate == 144 do	--skip all dialogue
-				skipABit(1)
-				gamestate = memory.read_u8(0x1)
-				emu.frameadvance()
-			end
-			console.write("battle is over.\n")
-		else
-			skipABit(5)
-			fight(myPokemonID)
-		end
-	elseif gamestate == pokemonID then
-		joypad.set({Down = 1})
-		clearJoypad()
-		joypad.set({A = 1})
-		clearJoypad()
-		longWait()
-		longWait()
-		fight(memory.read_u8(0x1))
+		trainerPokemonFaint(myPokemonIDNumber)
+	elseif gamestate == pokemonID then		--my Pokemon fainted
+		myPokemonFaint(opponentPokemonIDNumber)
 	end
 end
 
---
---the gameLoop that is always running
---line 146
+
+--Params: Null
+--Returns: Null
+--Description: the gameLoop that is always running
 function main()	
-	local memLoc
+	romName = ROMName
+	readFromFile("PokemonMoves.txt")
+	local gamestate
+	local opponentPokemonIDNumber
 
 	while true do
-		memLoc = memory.read_u8(0x1)	--What is the current state of the game?
+		gamestate = get(theGameState)	--What is the current state of the game?
 		
-		if memLoc == 240 then		--Wild pokemon encounter
+		if gamestate == wildPokemonEncounter then	--Wild pokemon encounter
 			console.write("A wild Pokemon appeared!\n")
-			while memLoc == 240 do
-				shortWait()
-				memLoc = memory.read_u8(0x1)
-				emu.frameadvance()
-			end
-			longWait()
-			longWait()
-			skipABit(1)
-			longWait()
-			longWait()
-			fight(memory.read_u8(0x1))
-		elseif memLoc == 252 then
+			waitForAnimation(wildPokemonEncounter)
+			--console.write("Encounter animation over.\n")
+			opponentPokemonIDNumber = get(theGameState)
+			--console.write("The enemy Pokemon ID is: ", opponentPokemonIDNumber, "\n")
+			rapidBPress(opponentPokemonIDNumber)
+			longWait(3.6)
+			--console.write("Giving control to fight()\n")
+			local myPokemonIDNumber = get(theGameState)
+			joypad.set({A = 1})
+			client.clearautohold()
+			fight(myPokemonIDNumber, opponentPokemonIDNumber)
+		elseif gamestate == trainerBattle then
 			console.write("A Trainer wants to battle!\n")
-			while memLoc == 252 or memLoc == 144 do 	--disregard all text 
-				joypad.set({B = 1})
-				clearJoypad()
-				memLoc = memory.read_u8(0x1)
-				emu.frameadvance()
+			waitForAnimation(trainerBattle)
+			longWait(6)
+			if get(theGameState) == gymLeader then 
+				console.write("You have challenged Brock!\n")
+				waitForAnimation(gymLeader)
+				longWait(1)
+				joypad.set({A=1})
+				waitForAnimation(144)
+				opponentPokemonIDNumber = get(theGameState)
+				console.write("The enemy Pokemon ID is: ", opponentPokemonIDNumber, "\n")
+				waitForAnimation(opponentPokemonIDNumber)
+				longWait(1)
+				fight(get(theGameState), opponentPokemonIDNumber)
+			else
+				opponentPokemonIDNumber = get(theGameState)
+				longWait(1)
+				skipABit(5)
+				fight(get(theGameState), opponentPokemonIDNumber)
 			end
-			while memLoc ~= 233 do
-				longWait()
-				memLoc = memory.read_u8(0x1)
-				emu.frameadvance()
-			end
-			longWait()
-			skipABit(5)
-			fight(memory.read_u8(0x1))
 		end
+		
 		emu.frameadvance()
 	end
 	
 end
 
+theGameState = 0x1
+attackSelected = 0x0C26
+myCurrentHealth = 0x1016
+opponentCurrentHealth = 0x0FE7
+myMaxHealth =0x1024
+opponentMaxHealth =0x0FF5
+turnNumber = 0x0CD5
+wildPokemonEncounter = 240
+trainerBattle = 252
+gymLeader = 233
+makeAttackID = 1
+text1ID = 2
+attackAnimation1ID = 3
+responseAnimation1ID = 4
+text2ID = 5
+attackAnimation2ID = 6
+responseAnimation2ID = 7
+romName = gameinfo.getromname()
+pokemonMoveBank = {}
+
+event.onsavestate(writeToFile, "OnSaveState")
 main()
